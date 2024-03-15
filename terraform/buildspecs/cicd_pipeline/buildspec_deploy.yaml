@@ -1,0 +1,28 @@
+version: 0.2
+
+env:
+
+  variables:
+    AWS_ACCOUNT: $AWS_ACCOUNT
+    AWS_REGION: $AWS_REGION
+    BASE_PATH: .
+
+phases:
+
+  pre_build:
+
+    commands:
+      - echo Pre-Build Phase...
+
+      - ls -la
+
+  build:
+    commands:
+      - echo Build Phase...
+
+      - aws lambda update-function-code --function-name "${PROJECT}-${KEY}" --zip-file fileb://"${FILENAME}".zip
+
+  post_build:
+    commands:
+      - echo Post-Build Phase...
+

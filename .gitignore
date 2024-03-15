@@ -1,0 +1,4 @@
+*.idea
+*tf_state.json
+*tf_pipeline.json
+*.zip

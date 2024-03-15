@@ -1,0 +1,166 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+
+Description: >-
+  Terraform State Bootstrap. ***NOTE: This template is Created/Updated/Deleted by the CLI.***
+
+
+Parameters:
+
+#  StackName:
+#    Description: Stack Name.
+#    Default: ''
+#    Type: String
+
+  # ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
+
+  Branch:
+    Description: Branch.
+    Default: ''
+    Type: String
+
+  AccountID4Chars:
+    Description: Account ID (4 Chars).
+    Default: ''
+    Type: String
+
+Resources:
+
+  CodestarConnection:
+    Type: AWS::CodeStarConnections::Connection
+    Properties:
+      ConnectionName: !Sub '${AWS::StackName}-CSConn'
+      ProviderType: GitHub
+
+
+  KMSKeyAlias:
+    Type: AWS::KMS::Alias
+    DependsOn: KMSKey
+    Properties:
+      AliasName: !Sub 'alias/${AWS::StackName}'
+      TargetKeyId: !Ref KMSKey
+
+  KMSKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: !Sub "KMS Key for Terraform - ${AWS::StackName}."
+      KeyPolicy:
+        Version: '2012-10-17'
+        Id: key-default-1
+        Statement:
+          - Sid: Default root access
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: kms:*
+            Resource: '*'
+          - Sid: S3
+            Effect: Allow
+            Principal:
+              Service: !Sub "s3.${AWS::Region}.amazonaws.com"
+            Action:
+              - kms:Encrypt*
+              - kms:Decrypt*
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:Describe*
+            Resource: '*'
+
+
+  # ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
+  # Resource -> S3 Bucket & Bucket Policy
+  # ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
+
+  TerraformStateS3Bucket:
+    Type: AWS::S3::Bucket
+    DependsOn: KMSKey
+    Properties:
+      BucketName: !Sub '${AWS::StackName}-${AccountID4Chars}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref KMSKey
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  TerraformStateS3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    DependsOn: TerraformStateS3Bucket
+    Properties:
+      Bucket: !Ref TerraformStateS3Bucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyDelete
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:DeleteBucket'
+            Resource:
+              - !Sub 'arn:aws:s3:::${TerraformStateS3Bucket}'
+              - !Sub 'arn:aws:s3:::${TerraformStateS3Bucket}/*'
+
+
+  # ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
+  # Resource -> DynamoDB Table
+  # ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
+
+  TerraformStateDynDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AWS::StackName}'
+      AttributeDefinitions:
+        - AttributeName: LockID
+          AttributeType: S
+      KeySchema:
+        - AttributeName: LockID
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      Tags:
+        # Add custom tags as CloudFormation is not able to add these unlike S3
+        # TODO: Understand why we need these tags
+        - Key: aws-cfn-stack-name
+          Value: !Ref 'AWS::StackName'
+        - Key: aws-cfn-stack-id
+          Value: !Ref 'AWS::StackId'
+        - Key: aws-cfn-logical-id
+          Value: TerraformStateDynDBTable
+
+# ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
+# Outputs
+# ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
+
+Outputs:
+
+  CodeStarConnection:
+    Description: CodeStar Connection.
+    Value: !Ref CodestarConnection
+    Export:
+      Name: !Sub '${AWS::StackName}-CodeStarConnection'
+
+  # ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
+
+  KMSKey:
+    Description: KMS Key for Terraform State.
+    Value: !Ref KMSKey
+    Export:
+      Name: !Sub '${AWS::StackName}-KMSKey'
+
+  TerraformStateS3Bucket:
+    Description: S3 Bucket for Terraform State.
+    Value: !Ref TerraformStateS3Bucket
+    Export:
+      Name: !Sub '${AWS::StackName}-S3Bucket'
+
+  TerraformStateDynDBTable:
+    Description: DynamoDB Table for Terraform State.
+    Value: !Ref TerraformStateDynDBTable
+    Export:
+      Name: !Sub '${AWS::StackName}-DynDBTable'

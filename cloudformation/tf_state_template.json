@@ -1,0 +1,14 @@
+[
+  {
+    "ParameterKey": "Branch",
+    "ParameterValue": "<BRANCH>",
+    "UsePreviousValue": false,
+    "ResolvedValue": "string"
+  },
+    {
+    "ParameterKey": "AccountID4Chars",
+    "ParameterValue": "<ACCOUNT_ID_4_CHARS>",
+    "UsePreviousValue": false,
+    "ResolvedValue": "string"
+  }
+]

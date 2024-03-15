@@ -1,0 +1,38 @@
+[
+  {
+    "ParameterKey": "StackNameOfState",
+    "ParameterValue": "<STACK_NAME_OF_STATE>",
+    "UsePreviousValue": false,
+    "ResolvedValue": "string"
+  },
+  {
+    "ParameterKey": "Branch",
+    "ParameterValue": "<BRANCH>",
+    "UsePreviousValue": false,
+    "ResolvedValue": "string"
+  },
+  {
+    "ParameterKey": "Repo",
+    "ParameterValue": "SingularbitLabs/labs-aws-api",
+    "UsePreviousValue": false,
+    "ResolvedValue": "string"
+  },
+  {
+    "ParameterKey": "AccountId4Chars",
+    "ParameterValue": "<ACCOUNT_ID_4_CHARS>",
+    "UsePreviousValue": false,
+    "ResolvedValue": "string"
+  },
+  {
+    "ParameterKey": "CodeBuildPlanSpec",
+    "ParameterValue": "cloudformation/specs/buildspec_plan.yaml",
+    "UsePreviousValue": false,
+    "ResolvedValue": "string"
+  },
+  {
+    "ParameterKey": "CodeBuildApplySpec",
+    "ParameterValue": "cloudformation/specs/buildspec_apply.yaml",
+    "UsePreviousValue": false,
+    "ResolvedValue": "string"
+  }
+]

@@ -1,0 +1,22 @@
+[
+  {
+    "Key": "Branch",
+    "Value": "<BRANCH>"
+  },
+  {
+    "Key": "Owner",
+    "Value": "Singularbit Labs"
+  },
+  {
+    "Key": "Project",
+    "Value": "Singularbit Labs API"
+  },
+  {
+    "Key": "DeploymentType",
+    "Value": "CloudFormation"
+  },
+  {
+    "Key": "Developers",
+    "Value": "Pedro"
+  }
+]

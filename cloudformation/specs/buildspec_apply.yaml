@@ -1,0 +1,48 @@
+version: 0.2
+
+env:
+  variables:
+    TERRAFORM_VERSION: 1.7.4
+    TERRATEST_VERSION: v0.13.13
+    TFSEC_VERSION: v1.28.4
+    TFLINT_VERSION: v0.48.0
+    BASE_PATH: .
+
+phases:
+
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Install Terraform..."
+      - chmod +x cloudformation/scripts/terraform-install.sh
+      - cloudformation/scripts/terraform-install.sh
+      - terraform --version
+
+  pre_build:
+    commands:
+
+
+  build:
+    on-failure: ABORT
+    commands:
+#      - find / -name "tfplan.binary"
+      - # /codebuild/output/src617/src/s3/01/terraform/tfplan.binary
+#      - find / -name "*.zip"
+      - # /codebuild/output/src617/src/s3/01/terraform/lambda/function-1.zip
+      - cd ./terraform
+      - ls -lahrt lambda
+      - >
+        terraform init -migrate-state -force-copy
+        -backend-config="bucket=${TF_STATE_S3_BUCKET}"
+        -backend-config="key=${TF_STATE_KEY}"
+        -backend-config="region=${AWS_DEFAULT_REGION}"
+        -backend-config="dynamodb_table=${TF_STATE_DYNAMODB_TABLE}"
+        -backend-config="encrypt=true"
+      - terraform apply -auto-approve $CODEBUILD_SRC_DIR_PlanOutput/terraform/tfplan.binary
+
+  post_build:
+    commands:
+      - echo "BuildSpec completed on `date`"
+#      - find / -name "function-1.zip"
+#      - #/codebuild/output/src4154/src/s3/00/terraform/lambda/function-1.zip

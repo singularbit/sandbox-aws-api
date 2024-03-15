@@ -1,0 +1,66 @@
+version: 0.2
+
+env:
+  variables:
+    TERRAFORM_VERSION: 1.7.4
+    TERRATEST_VERSION: v0.13.13
+    TFSEC_VERSION: v1.28.4
+    TFLINT_VERSION: v0.48.0
+    BASE_PATH: .
+    RUN_TESTS: false
+
+phases:
+
+  install:
+    on-failure: ABORT
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Install Terraform..."
+      - chmod +x ${CODEBUILD_SRC_DIR}/cloudformation/scripts/terraform-install.sh
+      - ${CODEBUILD_SRC_DIR}/cloudformation/scripts/terraform-install.sh
+      - terraform --version
+
+      - echo "Install scanners..."
+      - chmod +x ${CODEBUILD_SRC_DIR}/cloudformation/scripts/scanners_install.sh
+      - ${CODEBUILD_SRC_DIR}/cloudformation/scripts/scanners_install.sh | tee
+
+  pre_build:
+    commands:
+      - chmod +x ${CODEBUILD_SRC_DIR}/cloudformation/scripts/scanners_run_1.sh
+      - ${CODEBUILD_SRC_DIR}/cloudformation/scripts/scanners_run_1.sh | tee
+
+  build:
+    on-failure: ABORT
+    commands:
+#      - echo "Running snyk..."
+      - cd ./${BASE_PATH}/terraform
+      - ls -la && pwd
+#      - snyk iac test . --severity-threshold=critical
+
+      - echo "Running Terraform..."
+      - echo $TF_STATE_S3_BUCKET $TF_STATE_KEY $TF_STATE_DYNAMODB_TABLE $AWS_DEFAULT_REGION
+      - >
+        terraform init
+        -backend-config="bucket=${TF_STATE_S3_BUCKET}"
+        -backend-config="key=${TF_STATE_KEY}"
+        -backend-config="region=${AWS_DEFAULT_REGION}"
+        -backend-config="dynamodb_table=${TF_STATE_DYNAMODB_TABLE}"
+        -backend-config="encrypt=true"
+      - terraform plan -var-file=${TFVARS_FILE} -out=tfplan.binary
+      - terraform show -json tfplan.binary > tfplan.json
+
+      - chmod +x ${CODEBUILD_SRC_DIR}/cloudformation/scripts/scanners_run_2.sh
+      - ${CODEBUILD_SRC_DIR}/cloudformation/scripts/scanners_run_2.sh | tee
+
+  post_build:
+    commands:
+      - echo "BuildSpec completed on `date`"
+      - cd lambda
+      - pwd
+      - ls -lahrt
+
+artifacts:
+  name: PlanOutput
+  files:
+    - ./${BASE_PATH}/terraform/tfplan.binary

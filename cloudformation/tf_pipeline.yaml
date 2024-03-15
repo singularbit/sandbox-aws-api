@@ -1,0 +1,364 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+
+Description: >-
+  Terraform CodePipeline. ***NOTE: This template is Created/Updated/Deleted by the CLI.***
+
+
+Parameters:
+
+#  StackName:
+#    Description: Stack Name.
+#    Default: ''
+#    Type: String
+
+  StackNameOfState:
+    Description: State Bootstrap Stack Name.
+    Default: ''
+    Type: String
+
+  # ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
+
+  Branch:
+    Description: Branch.
+    Default: ''
+    Type: String
+
+  Repo:
+    Description: Repo.
+    Default: ''
+    Type: String
+
+  # ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
+  AccountId4Chars:
+    Description: Account ID (4 Chars).
+    Default: ''
+    Type: String
+
+  CodeBuildPlanSpec:
+    Description: CodeBuild Plan Spec.
+    Default: ''
+    Type: String
+
+  CodeBuildApplySpec:
+    Description: CodeBuild Apply Spec.
+    Default: ''
+    Type: String
+
+
+Resources:
+
+  # ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
+  # Resource -> Terraform Pipeline -> Artifact Bucket
+  # ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
+
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${AWS::StackName}-artifactstore-${AccountId4Chars}'
+      AccessControl: Private
+      VersioningConfiguration:
+          Status: Enabled
+      PublicAccessBlockConfiguration:
+          BlockPublicAcls: true
+          BlockPublicPolicy: true
+          IgnorePublicAcls: true
+          RestrictPublicBuckets: true
+      BucketEncryption:
+          ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Sub
+                - "${kmsKey}"
+                - kmsKey: !ImportValue
+                    'Fn::Sub': "${StackNameOfState}-KMSKey"
+
+  # ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
+  # Resource -> Terraform Pipeline
+  # ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
+
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    DependsOn:
+      - ArtifactBucket
+      - CodePipelineRole
+      - CodeBuildPlan
+      - CodeBuildApply
+    Properties:
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactBucket
+#        Location: !Sub
+#          - "${artifactBucket}"
+#          - artifactBucket: !ImportValue
+#              'Fn::Sub': "${StackNameOfState}-ArtifactBucket"
+      #        EncryptionKey:
+      #          Id: !Ref KMSKey
+      #          Type: KMS
+      Name: !Sub '${AWS::StackName}'
+      RoleArn: !GetAtt CodePipelineRole.Arn
+      PipelineType: 'V2'
+
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: SourceAction
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Version: 1
+                Provider: CodeStarSourceConnection
+              OutputArtifacts:
+                - Name: SourceOutput
+              Configuration:
+                ConnectionArn: !Sub
+                  - "${csConnection}"
+                  - csConnection: !ImportValue
+                      'Fn::Sub': "${StackNameOfState}-CodeStarConnection"
+                FullRepositoryId: !Ref Repo
+                #                PollForSourceChanges: 'false'
+                BranchName: !Ref Branch
+                #                RepositoryName: !Ref Repo
+                OutputArtifactFormat: CODE_ZIP
+              RunOrder: 1
+        - Name: Terraform_Plan
+          Actions:
+            - Name: RunTerraformPlan
+              InputArtifacts:
+                - Name: SourceOutput
+              OutputArtifacts:
+                - Name: PlanOutput
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: 1
+                Provider: CodeBuild
+              Configuration:
+                ProjectName: !Ref CodeBuildPlan
+              RunOrder: 1
+
+        - Name: WaitForApproval
+          Actions:
+            - Name: WaitForApproval
+              ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Version: 1
+                Provider: Manual
+              Configuration:
+                #                NotificationArn: !Ref ApprovalNotificationArn
+                #                ExternalEntityLink: !Ref ApprovalExternalEntityLink
+                CustomData: 'Deploy changes?'
+              RunOrder: 1
+
+        - Name: Terraform_Apply
+          Actions:
+            - Name: RunTerraformApply
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: 1
+                Provider: CodeBuild
+              Configuration:
+                ProjectName: !Ref CodeBuildApply
+                PrimarySource: SourceOutput
+              InputArtifacts:
+                - Name: SourceOutput
+                - Name: PlanOutput
+              RunOrder: 1
+
+  # ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
+  # Resource -> Terraform Pipeline -> BuildProject -> Plan
+  # ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
+
+  CodeBuildPlan:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub '${AWS::StackName}-CodeBuild-Plan'
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        EnvironmentVariables:
+          - Name: TFVARS_FILE
+            Value: !Sub 'terraform.${AccountId4Chars}.tfvars'
+            Type: PLAINTEXT
+          - Name: TF_STATE_S3_BUCKET
+            Value: !Sub
+              - "${stateBucket}"
+              - stateBucket: !ImportValue
+                  'Fn::Sub': "${StackNameOfState}-S3Bucket"
+            Type: PLAINTEXT
+          - Name: TF_STATE_DYNAMODB_TABLE
+            Value: !Sub
+              - "${dynDBTable}"
+              - dynDBTable: !ImportValue
+                  'Fn::Sub': "${StackNameOfState}-DynDBTable"
+            Type: PLAINTEXT
+          - Name: TF_STATE_KEY
+            Value: !Sub '${StackNameOfState}' # TODO: This should be the import value
+            Type: PLAINTEXT
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+            Type: PLAINTEXT
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:5.0
+        ImagePullCredentialsType: CODEBUILD
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: !Ref CodeBuildPlanSpec
+
+
+  # ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
+  # Resource -> Terraform Pipeline -> BuildProject -> Apply
+  # ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
+
+  CodeBuildApply:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub '${AWS::StackName}-CodeBuild-Apply'
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        EnvironmentVariables:
+          - Name: TFVARS_FILE
+            Value: !Sub 'terraform.${AccountId4Chars}.tfvars'
+            Type: PLAINTEXT
+          - Name: TF_STATE_S3_BUCKET
+            Value: !Sub
+              - "${stateBucket}"
+              - stateBucket: !ImportValue
+                  'Fn::Sub': "${StackNameOfState}-S3Bucket"
+            Type: PLAINTEXT
+          - Name: TF_STATE_DYNAMODB_TABLE
+            Value: !Sub
+              - "${dynDBTable}"
+              - dynDBTable: !ImportValue
+                  'Fn::Sub': "${StackNameOfState}-DynDBTable"
+            Type: PLAINTEXT
+          - Name: TF_STATE_KEY
+            Value: !Sub '${StackNameOfState}' # TODO: This should be the import value
+            Type: PLAINTEXT
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+            Type: PLAINTEXT
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:5.0
+        ImagePullCredentialsType: CODEBUILD
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: !Ref CodeBuildApplySpec
+
+
+  # ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
+  # Resource -> Terraform Pipeline -> Role
+  # ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
+
+  CodePipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codepipeline.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: !Sub '${AWS::StackName}-CodePipelinePolicy'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - codebuild:BatchGetBuilds
+                  - codebuild:StartBuild
+                  - codebuild:BatchGetBuildBatches
+                  - codebuild:StartBuildBatch
+                Resource:
+                  - !GetAtt CodeBuildPlan.Arn
+                  - !GetAtt CodeBuildApply.Arn
+              - Effect: Allow
+                Action:
+                  - s3:*
+                  - kms:*
+                  - codestar-connections:*
+                #                  - codecommit:* # Because, codecommit...
+                Resource: '*'
+
+  # ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
+  # Resource -> Terraform Pipeline -> BuildProject -> Role
+  # ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
+
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codebuild.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: !Sub '${AWS::StackName}-CodeBuildPolicy'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: AdditionalPermissions
+                Effect: Allow
+                Action:
+                  - apigateway:*
+                  - lambda:*
+                  - secretsmanager:*
+                  - rds:*
+                  - eks:*
+                  - route53:*
+                  - elasticloadbalancing:*
+                  - cloudfront:*
+                  - codebuild:*
+                  - codepipeline:*
+                  - cloudformation:ListExports
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - s3:*
+                  - kms:*
+                  - codestar-connections:*
+                  - ec2:*
+                  - dynamodb:*
+                  - logs:*
+                  - ssm:*
+                  - acm:*
+                  - iam:*
+                Resource: '*'
+
+
+# ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
+# Outputs
+# ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
+
+Outputs:
+
+  StackName:
+    Description: Stack Name.
+    Value: !Ref 'AWS::StackName'
+    Export:
+      Name: !Sub '${AWS::StackName}'
+
+  CodePipelineRole:
+    Description: CodePipeline Role.
+    Value: !GetAtt CodePipelineRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-CodePipelineRole'
+  
+  CodeBuildRole:
+    Description: CodeBuild Role.
+    Value: !GetAtt CodeBuildRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-CodeBuildRole'

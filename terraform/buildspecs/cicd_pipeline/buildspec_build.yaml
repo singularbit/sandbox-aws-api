@@ -1,0 +1,44 @@
+version: 0.2
+
+env:
+
+  variables:
+    AWS_ACCOUNT: $AWS_ACCOUNT
+    AWS_REGION: $AWS_REGION
+    BASE_PATH: .
+
+phases:
+
+  pre_build:
+    commands:
+      - echo Pre-Build Phase...
+
+      - ls -la
+      - pwd
+      - ls -la terraform/buildspecs/cicd_pipeline
+      - echo ${BASE_PATH}
+
+      - zip -j ${BASE_PATH}/${FILENAME}.zip ${BASE_PATH}/terraform/lambda/${FILENAME}/${FILENAME}.py
+
+  build:
+    commands:
+      - echo Build Phase...
+
+  post_build:
+    commands:
+      - echo Post-Build Phase...
+
+artifacts:
+  files:
+    - '**/*'
+  discard-paths: no
+#
+#artifacts:
+##  name: build_output
+#  files:
+#    - ${BASE_PATH}/function-1.zip
+
+
+
+#/codebuild/output/src2543113752/src/terraform/buildspecs/cicd_pipeline/buildspec_build.yaml
+#/codebuild/output/src2685251979/src/terraform/buildspecs/cicd_pipeline/buildspec_deploy.yaml
